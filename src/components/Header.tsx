@@ -7,6 +7,7 @@ interface HeaderProps {
   deviceView: DeviceView;
   onDeviceViewChange: (mode: DeviceView) => void;
   onOpenSheetSync: () => void;
+  onOpenDrive?: () => void;
   onSimulateIntake: () => void;
   onResetData: () => void;
   onRefreshSync?: () => void;
@@ -20,6 +21,7 @@ export const Header: React.FC<HeaderProps> = ({
   deviceView,
   onDeviceViewChange,
   onOpenSheetSync,
+  onOpenDrive,
   onSimulateIntake,
   onResetData,
   onRefreshSync,
@@ -131,6 +133,19 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="material-symbols-outlined text-[15px] text-[#00236f]">cloud_done</span>
             <span>Firestore Live</span>
           </div>
+
+          {/* Google Drive Workspace Trigger */}
+          {onOpenDrive && (
+            <button
+              type="button"
+              onClick={onOpenDrive}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#dae2fd] hover:bg-[#c2d0fc] text-[#00164e] text-xs font-semibold shadow-xs transition-all border border-[#b6c4ff] cursor-pointer"
+              title="Browse and import files from Google Drive"
+            >
+              <span className="material-symbols-outlined text-[16px] text-[#00236f]">add_to_drive</span>
+              <span className="hidden md:inline">Google Drive</span>
+            </button>
+          )}
 
           {/* Google Sheet CSV Sync Trigger (Stage 3 Requirement) */}
           <button

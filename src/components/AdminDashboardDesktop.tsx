@@ -19,10 +19,15 @@ export const AdminDashboardDesktop: React.FC<AdminDashboardDesktopProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [platformTab, setPlatformTab] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [sourceTab, setSourceTab] = useState<'All' | 'GoogleLink'>('All');
   const [sortField, setSortField] = useState<'staff' | 'platform' | 'program' | 'session' | 'submitted'>('submitted');
   const [sortAsc, setSortAsc] = useState(false);
 
   // Metrics
+  const googleLinkCount = registrations.filter(
+    (r) => r.capturedFromGoogleLink || r.sourceType === 'google_link'
+  ).length;
+
   const totalCount = registrations.length;
   const pendingCount = registrations.filter((r) => r.status === 'Pending').length;
   const approvedCount = registrations.filter((r) => r.status === 'Approved').length;
@@ -34,6 +39,11 @@ export const AdminDashboardDesktop: React.FC<AdminDashboardDesktopProps> = ({
   // Filtered and sorted records
   const filteredAndSorted = useMemo(() => {
     let result = registrations.filter((item) => {
+      // Source filter
+      if (sourceTab === 'GoogleLink') {
+        if (!item.capturedFromGoogleLink && item.sourceType !== 'google_link') return false;
+      }
+
       // Platform filter
       if (platformTab !== 'All' && item.platform !== platformTab) return false;
 
@@ -291,6 +301,33 @@ export const AdminDashboardDesktop: React.FC<AdminDashboardDesktopProps> = ({
               </button>
             ))}
           </div>
+
+          {/* Source Filter Switcher */}
+          <div className="flex items-center bg-[#f2f4f6] p-1 rounded-xl border border-[#e0e3e5]">
+            <button
+              type="button"
+              onClick={() => setSourceTab('All')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                sourceTab === 'All'
+                  ? 'bg-white text-[#00236f] shadow-xs'
+                  : 'text-[#565e74] hover:text-[#191c1e]'
+              }`}
+            >
+              All Sources
+            </button>
+            <button
+              type="button"
+              onClick={() => setSourceTab('GoogleLink')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                sourceTab === 'GoogleLink'
+                  ? 'bg-[#00236f] text-white shadow-xs'
+                  : 'text-[#00236f] hover:bg-[#dae2fd]/50'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[14px]">link</span>
+              <span>Google Link Data ({googleLinkCount})</span>
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center justify-between xl:justify-end gap-4 shrink-0">
@@ -436,8 +473,16 @@ export const AdminDashboardDesktop: React.FC<AdminDashboardDesktopProps> = ({
                     </td>
 
                     {/* Submitted At */}
-                    <td className="py-3 px-4 whitespace-nowrap font-mono text-[11px] text-[#565e74]">
-                      {item.submittedAt}
+                    <td className="py-3 px-4 whitespace-nowrap text-[11px] text-[#565e74]">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-mono">{item.submittedAt}</span>
+                        {(item.capturedFromGoogleLink || item.sourceType === 'google_link') && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-[#dae2fd] text-[#00164e] text-[10px] font-bold w-fit">
+                            <span className="material-symbols-outlined text-[10px]">link</span>
+                            <span>{item.sourceLinkTitle || 'Google Link'}</span>
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Status */}

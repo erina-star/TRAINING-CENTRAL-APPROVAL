@@ -22,10 +22,18 @@ export const SecretaryViewMobile: React.FC<SecretaryViewMobileProps> = ({
 }) => {
   const [selectedPlatform, setSelectedPlatform] = useState<string>('ALL');
   const [activeStatusFilter, setActiveStatusFilter] = useState<'PENDING' | 'APPROVED' | 'REJECTED' | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<'ALL' | 'GOOGLE_LINK_ONLY'>('ALL');
   const [activeTab, setActiveTab] = useState<'pending' | 'batch' | 'audit' | 'metrics' | 'config'>('pending');
+
+  const googleLinkCount = registrations.filter(
+    (r) => r.capturedFromGoogleLink || r.sourceType === 'google_link'
+  ).length;
 
   // Filter logic
   let filtered = registrations.filter((item) => {
+    if (sourceFilter === 'GOOGLE_LINK_ONLY') {
+      if (!item.capturedFromGoogleLink && item.sourceType !== 'google_link') return false;
+    }
     if (selectedPlatform === 'ALL') return true;
     return item.platform === selectedPlatform;
   });
@@ -67,18 +75,11 @@ export const SecretaryViewMobile: React.FC<SecretaryViewMobileProps> = ({
                   LIVE
                 </span>
               </div>
-              <span className="text-[11px] text-[#565e74]">Pending Queue</span>
+              <span className="text-[11px] text-[#565e74]">Secretary Triage Queue</span>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              className="w-8 h-8 relative flex items-center justify-center rounded-full hover:bg-[#eceef0] transition-colors"
-            >
-              <span className="material-symbols-outlined text-[#565e74] text-[20px]">notifications</span>
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#ba1a1a] ring-2 ring-white"></span>
-            </button>
             <div className="w-8 h-8 rounded-full bg-[#00236f] flex items-center justify-center text-white shrink-0 shadow-xs">
               <span className="material-symbols-outlined text-[17px]">person</span>
             </div>
@@ -107,25 +108,54 @@ export const SecretaryViewMobile: React.FC<SecretaryViewMobileProps> = ({
 
       {/* Main Content Area */}
       <div className="flex-1 p-3.5 flex flex-col gap-3.5 pb-28">
-        {/* Public Prototype Access Banner */}
-        <div className="w-full bg-[#dae2fd] rounded-xl p-2.5 flex items-center justify-between shadow-2xs border border-[#b6c4ff]">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center shrink-0 shadow-2xs">
-              <span className="material-symbols-outlined text-[#00236f] text-[16px]">verified_user</span>
-            </div>
-            <div className="flex flex-col min-w-0">
-              <p className="text-xs font-bold text-[#131b2e] truncate">
-                Stage 1 Prototype • Public Access
-              </p>
-              <p className="text-[10px] text-[#5c647a] truncate">
-                No login required • Secretary view mode
-              </p>
-            </div>
-          </div>
-          <span className="shrink-0 px-2 py-0.5 rounded-full bg-[#00236f] text-white text-[10px] font-bold tracking-wider uppercase">
-            Active
-          </span>
+        {/* Source Isolation Switcher Pill Bar */}
+        <div className="flex items-center p-1 bg-white rounded-xl border border-[#e0e3e5] gap-1 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setSourceFilter('ALL')}
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all ${
+              sourceFilter === 'ALL'
+                ? 'bg-[#f2f4f6] text-[#00236f] font-bold shadow-2xs'
+                : 'text-[#565e74]'
+            }`}
+          >
+            <span>All Data ({registrations.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSourceFilter('GOOGLE_LINK_ONLY')}
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all ${
+              sourceFilter === 'GOOGLE_LINK_ONLY'
+                ? 'bg-[#00236f] text-white font-bold shadow-2xs'
+                : 'text-[#00236f] bg-[#dae2fd]/40'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[14px]">link</span>
+            <span>Google Link Data ({googleLinkCount})</span>
+          </button>
         </div>
+
+        {/* Notice Banner if viewing Google Link only */}
+        {sourceFilter === 'GOOGLE_LINK_ONLY' && (
+          <div className="p-2.5 rounded-xl bg-[#dae2fd] border border-[#b6c4ff] text-[#00164e] text-xs flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[18px] text-[#00236f]">verified</span>
+              <span className="font-bold">Showing Google Link records only</span>
+            </div>
+            {pendingCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  filtered.filter((r) => r.status === 'Pending').forEach((r) => onApprove(r.id));
+                }}
+                className="px-2 py-0.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-[11px] font-bold cursor-pointer"
+              >
+                Approve All ({pendingCount})
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Platform Control & Simulation Bar */}
         <div className="w-full bg-white rounded-xl p-3 shadow-xs border border-[#e6e8ea] flex flex-col gap-2.5">
@@ -158,10 +188,10 @@ export const SecretaryViewMobile: React.FC<SecretaryViewMobileProps> = ({
             <button
               type="button"
               onClick={onSimulateIntake}
-              className="h-10 px-3 rounded-lg bg-[#1e3a8a] text-white text-xs font-bold flex items-center gap-1 shadow-xs active:scale-95 transition-all shrink-0 cursor-pointer"
+              className="h-10 px-3 rounded-lg bg-[#00236f] text-white text-xs font-bold flex items-center gap-1 shadow-xs active:scale-95 transition-all shrink-0 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px]">add_circle</span>
-              <span>+ Simulate Intake</span>
+              <span>+ Manual</span>
             </button>
           </div>
 
@@ -223,39 +253,18 @@ export const SecretaryViewMobile: React.FC<SecretaryViewMobileProps> = ({
           </div>
         </div>
 
-        {/* Quick Filter Label Indicator */}
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-1.5">
-            <span className="material-symbols-outlined text-[16px] text-[#00236f]">filter_list</span>
-            <span className="text-[11px] font-bold text-[#565e74] uppercase tracking-wider">
-              {activeStatusFilter
-                ? `QUEUE: ${selectedPlatform === 'ALL' ? 'ALL PLATFORMS' : selectedPlatform} • ${activeStatusFilter}`
-                : `QUEUE: ${selectedPlatform === 'ALL' ? 'ALL PLATFORMS' : selectedPlatform}`}
-            </span>
-          </div>
-          {(selectedPlatform !== 'ALL' || activeStatusFilter) && (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPlatform('ALL');
-                setActiveStatusFilter(null);
-              }}
-              className="text-[#00236f] text-xs font-semibold hover:underline cursor-pointer"
-            >
-              Show All
-            </button>
-          )}
-        </div>
-
-        {/* Requests Card List */}
+        {/* Card List of Registrations */}
         <div className="flex flex-col gap-2.5">
           {filtered.map((req) => {
             const platformBadgeClass = getPlatformColor(req.platform);
+            const isFromGoogleLink = req.capturedFromGoogleLink || req.sourceType === 'google_link';
 
             return (
               <div
                 key={req.id}
-                className="w-full bg-white rounded-2xl p-3.5 shadow-xs border border-[#e6e8ea] flex flex-col gap-2 transition-all"
+                className={`bg-white rounded-2xl p-3.5 shadow-xs border border-[#e6e8ea] flex flex-col gap-2.5 transition-all ${
+                  isFromGoogleLink ? 'border-l-4 border-l-[#00236f]' : ''
+                }`}
               >
                 {/* Header Row */}
                 <div className="flex items-start justify-between gap-2">
@@ -313,10 +322,17 @@ export const SecretaryViewMobile: React.FC<SecretaryViewMobileProps> = ({
                       <span className="material-symbols-outlined text-[13px] text-[#757682]">event</span>
                       <span>Session: {req.sessionDate}</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[13px] text-[#757682]">schedule</span>
-                      <span>Submitted: {req.submittedAt}</span>
-                    </div>
+                    {isFromGoogleLink ? (
+                      <div className="flex items-center gap-1.5 text-[#00236f] font-semibold">
+                        <span className="material-symbols-outlined text-[13px]">link</span>
+                        <span>Captured from: {req.sourceLinkTitle || 'Google Link'}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[13px] text-[#757682]">schedule</span>
+                        <span>Submitted: {req.submittedAt}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -331,7 +347,7 @@ export const SecretaryViewMobile: React.FC<SecretaryViewMobileProps> = ({
                       <span className="opacity-80 text-[10px]">{req.rejectionTimestamp || 'Recent'}</span>
                     </div>
                     <p className="text-[#742a2a] leading-tight">
-                      {req.remarks || 'Prerequisite coursework not fulfilled on platform.'}
+                      {req.remarks || 'Course prerequisites not satisfied.'}
                     </p>
                   </div>
                 )}
@@ -358,32 +374,32 @@ export const SecretaryViewMobile: React.FC<SecretaryViewMobileProps> = ({
                   </div>
                 ) : req.status === 'Approved' ? (
                   <div className="flex items-center justify-between pt-1">
-                    <span className="text-[11px] text-[#565e74] flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[14px] text-emerald-600">done_all</span>
-                      Verified by Secretary
+                    <span className="text-[11px] text-emerald-800 font-semibold flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">verified</span>
+                      Endorsed by Secretary
                     </span>
                     <button
                       type="button"
                       onClick={() => onUndo(req.id)}
-                      className="h-7 px-2 rounded text-[#565e74] hover:text-[#00236f] text-[11px] font-semibold flex items-center gap-1 hover:bg-[#eceef0] transition-colors cursor-pointer"
+                      className="text-xs text-[#00236f] hover:underline font-bold flex items-center gap-0.5 cursor-pointer"
                     >
                       <span className="material-symbols-outlined text-[13px]">undo</span>
-                      <span>Undo / Re-evaluate</span>
+                      <span>Undo</span>
                     </button>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between pt-1">
-                    <span className="text-[11px] text-[#ba1a1a] flex items-center gap-1 font-semibold">
-                      <span className="material-symbols-outlined text-[14px]">block</span>
-                      Application Declined
+                    <span className="text-[11px] text-[#93000a] font-semibold flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">cancel</span>
+                      Disapproved
                     </span>
                     <button
                       type="button"
                       onClick={() => onUndo(req.id)}
-                      className="h-7 px-2 rounded text-[#565e74] hover:text-[#00236f] text-[11px] font-semibold flex items-center gap-1 hover:bg-[#eceef0] transition-colors cursor-pointer"
+                      className="text-xs text-[#00236f] hover:underline font-bold flex items-center gap-0.5 cursor-pointer"
                     >
                       <span className="material-symbols-outlined text-[13px]">undo</span>
-                      <span>Undo / Re-evaluate</span>
+                      <span>Undo</span>
                     </button>
                   </div>
                 )}
@@ -392,102 +408,12 @@ export const SecretaryViewMobile: React.FC<SecretaryViewMobileProps> = ({
           })}
 
           {filtered.length === 0 && (
-            <div className="flex flex-col items-center justify-center p-8 bg-white rounded-2xl shadow-xs border border-[#e6e8ea] text-center my-4">
-              <div className="w-14 h-14 rounded-full bg-[#f2f4f6] flex items-center justify-center mb-2.5 text-[#565e74]">
-                <span className="material-symbols-outlined text-[28px]">folder_off</span>
-              </div>
-              <h3 className="text-sm font-bold text-[#191c1e] mb-1">Queue Clear</h3>
-              <p className="text-xs text-[#565e74] max-w-xs mb-3">
-                No pending training requests found for this platform selection.
-              </p>
-              <button
-                type="button"
-                onClick={onSimulateIntake}
-                className="h-9 px-3.5 rounded-lg bg-[#00236f] text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">add_task</span>
-                <span>Simulate Inbound Request</span>
-              </button>
+            <div className="p-8 text-center bg-white rounded-2xl border border-[#e6e8ea] text-[#74777f] text-xs">
+              No applications match current filters.
             </div>
           )}
         </div>
       </div>
-
-      {/* Floating Sandbox Bar */}
-      <div className="fixed bottom-16 inset-x-0 z-20 px-3 pointer-events-none max-w-md mx-auto">
-        <div className="pointer-events-auto bg-[#2d3133]/95 text-[#eff1f3] backdrop-blur-md rounded-xl px-3 py-1.5 flex items-center justify-between shadow-xl border border-white/10">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#85f8c4] animate-pulse"></span>
-            <span className="text-[10px] font-bold tracking-wider uppercase text-[#eff1f3]">
-              PROTOTYPE SANDBOX
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={onResetData}
-            className="flex items-center gap-1 text-[#85f8c4] hover:text-[#68dba9] text-[11px] font-semibold py-0.5 px-2 rounded hover:bg-white/10 transition-colors cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[13px]">sync</span>
-            <span>Reset Mock Data</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Bottom Mobile Tab Bar */}
-      <nav className="fixed bottom-0 inset-x-0 z-30 max-w-md mx-auto bg-white/95 backdrop-blur-xl border-t border-[#e6e8ea] h-16 flex items-center justify-around px-2 shadow-lg">
-        <button
-          type="button"
-          onClick={() => setActiveTab('pending')}
-          className={`flex flex-col items-center justify-center gap-0.5 min-w-[54px] h-11 transition-colors cursor-pointer ${
-            activeTab === 'pending' ? 'text-[#00236f] font-bold' : 'text-[#565e74]'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[20px]">pending_actions</span>
-          <span className="text-[10px]">Pending</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('batch')}
-          className={`flex flex-col items-center justify-center gap-0.5 min-w-[54px] h-11 transition-colors cursor-pointer ${
-            activeTab === 'batch' ? 'text-[#00236f] font-bold' : 'text-[#565e74]'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[20px]">rule</span>
-          <span className="text-[10px]">Batch</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('audit')}
-          className={`flex flex-col items-center justify-center gap-0.5 min-w-[54px] h-11 transition-colors cursor-pointer ${
-            activeTab === 'audit' ? 'text-[#00236f] font-bold' : 'text-[#565e74]'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[20px]">history_edu</span>
-          <span className="text-[10px]">Audit</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onSwitchToAdmin()}
-          className="flex flex-col items-center justify-center gap-0.5 min-w-[54px] h-11 text-[#565e74] hover:text-[#00236f] transition-colors cursor-pointer"
-        >
-          <span className="material-symbols-outlined text-[20px]">insights</span>
-          <span className="text-[10px]">Metrics</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('config')}
-          className={`flex flex-col items-center justify-center gap-0.5 min-w-[54px] h-11 transition-colors cursor-pointer ${
-            activeTab === 'config' ? 'text-[#00236f] font-bold' : 'text-[#565e74]'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[20px]">tune</span>
-          <span className="text-[10px]">Config</span>
-        </button>
-      </nav>
     </div>
   );
 };

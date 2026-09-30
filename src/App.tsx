@@ -15,6 +15,8 @@ import {
   updateRegistrationInFirestore,
   saveSyncLinkInFirestore,
   deleteSyncLinkFromFirestore,
+  saveBatchRegistrationsInFirestore,
+  saveBatchSyncLinksInFirestore,
   resetAllRegistrationsInFirestore,
   INITIAL_SYNC_LINKS
 } from './services/firestoreService';
@@ -23,6 +25,12 @@ import {
   logoutUser,
   getCachedUser
 } from './services/authService';
+import {
+  fetchAndIntegrateGoogleLink,
+  extractGoogleSheetDetails,
+  getGoogleSheetCandidateUrls,
+  ParsedGoogleLink
+} from './services/googleLinkService';
 import { testFirestoreConnection } from './firebase';
 import { Header } from './components/Header';
 import { SecretaryViewDesktop } from './components/SecretaryViewDesktop';
@@ -32,6 +40,7 @@ import { AdminDashboardMobile } from './components/AdminDashboardMobile';
 import { RejectionModal } from './components/RejectionModal';
 import { AuditTrailModal } from './components/AuditTrailModal';
 import { GoogleSheetSyncModal } from './components/GoogleSheetSyncModal';
+import { GoogleDriveModal } from './components/GoogleDriveModal';
 import LoginScreen from './components/LoginScreen';
 import { Toast } from './components/Toast';
 
@@ -43,6 +52,7 @@ export default function App() {
   const [syncLinks, setSyncLinks] = useState<DataSyncLink[]>(() => INITIAL_SYNC_LINKS);
   const [currentView, setCurrentView] = useState<ViewMode>('secretary');
   const [deviceView, setDeviceView] = useState<DeviceView>('responsive');
+  const [secretarySourceFilter, setSecretarySourceFilter] = useState<'ALL' | 'GOOGLE_LINK_ONLY'>('ALL');
 
   // Modals state
   const [rejectionTarget, setRejectionTarget] = useState<TrainingRegistration | null>(null);
@@ -52,6 +62,7 @@ export default function App() {
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
 
   const [isSheetSyncOpen, setIsSheetSyncOpen] = useState(false);
+  const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
 
   // Toast state
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -295,109 +306,56 @@ export default function App() {
     showToast('Official CSV Ledger Export Downloaded Successfully!', 'file_download');
   };
 
-  // Actions: Google Sheet CSV Live Sync
-  const handleExecuteSheetSync = (sheetUrl: string, title?: string) => {
+  // Actions: Google Sheet CSV Live Sync - STRICTLY REAL DATA
+  const handleExecuteSheetSync = async (sheetUrl: string, title?: string) => {
     if (!sheetUrl.trim()) {
       showToast('Please specify a valid Google Sheet CSV URL', 'error');
       return;
     }
 
-    showToast('Fetching and parsing live Google Sheet CSV stream...', 'sync');
+    showToast('Connecting to Google Sheet and capturing data...', 'sync');
 
-    fetch(sheetUrl)
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`Failed to fetch sheet: HTTP ${res.status}`);
-        }
-        return res.text();
-      })
-      .then(async (csvText) => {
-        const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
-        if (lines.length <= 1) {
-          showToast('The published CSV appears to be empty or missing data rows.', 'warning');
-          return;
-        }
+    try {
+      const { sheetId } = extractGoogleSheetDetails(sheetUrl);
+      const candidateUrls = getGoogleSheetCandidateUrls(sheetUrl);
+      const linkItem: ParsedGoogleLink = {
+        id: `LINK-${Date.now()}`,
+        url: sheetUrl,
+        candidateUrls,
+        title: title || (sheetId ? `Google Sheet [${sheetId.slice(0, 8)}]` : 'Google Sheet Stream'),
+        platform: 'Platform Alpha',
+        status: 'valid'
+      };
 
-        const headers = lines[0].split(',').map((h) => h.replace(/^["']|["']$/g, '').trim().toLowerCase());
-        const nameIdx = headers.findIndex((h) => h.includes('name') || h.includes('staff'));
-        const progIdx = headers.findIndex((h) => h.includes('program') || h.includes('training') || h.includes('course'));
-        const platIdx = headers.findIndex((h) => h.includes('platform'));
-        const statIdx = headers.findIndex((h) => h.includes('status'));
+      const result = await fetchAndIntegrateGoogleLink(linkItem, 0);
 
-        const parsedRegistrations: TrainingRegistration[] = [];
+      if (result.registrations.length > 0) {
+        setRegistrations((prev) => {
+          const existingIds = new Set(result.registrations.map((r) => r.id));
+          const filtered = prev.filter((r) => !existingIds.has(r.id));
+          const combined = [...result.registrations, ...filtered];
+          saveStoredRegistrations(combined);
+          return combined;
+        });
 
-        for (let i = 1; i < lines.length; i++) {
-          const row = lines[i].split(',').map((c) => c.replace(/^["']|["']$/g, '').trim());
-          if (!row[0] && !row[1]) continue;
+        await saveSyncLinkInFirestore(result.syncLink);
+        setSecretarySourceFilter('GOOGLE_LINK_ONLY');
+        setCurrentView('secretary');
 
-          const staffName = (nameIdx >= 0 && row[nameIdx]) ? row[nameIdx] : `Staff Member ${i}`;
-          const program = (progIdx >= 0 && row[progIdx]) ? row[progIdx] : 'Mandatory Training Module';
-          let plat: any = 'Platform Alpha';
-          if (platIdx >= 0 && row[platIdx]) {
-            const rawPlat = row[platIdx].toLowerCase();
-            if (rawPlat.includes('beta')) plat = 'Platform Beta';
-            else if (rawPlat.includes('gamma')) plat = 'Platform Gamma';
-          }
-
-          let stat: any = 'Pending';
-          if (statIdx >= 0 && row[statIdx]) {
-            const rawStat = row[statIdx].toLowerCase();
-            if (rawStat.includes('approv')) stat = 'Approved';
-            else if (rawStat.includes('reject')) stat = 'Rejected';
-          }
-
-          const initials = staffName
-            .split(' ')
-            .map((p) => p[0])
-            .join('')
-            .toUpperCase()
-            .slice(0, 2) || 'ST';
-
-          const newReg: TrainingRegistration = {
-            id: `GS-${9000 + i}`,
-            staffName,
-            staffId: `EMP-${7000 + i}`,
-            initials,
-            avatarBg: 'bg-[#00236f] text-white',
-            platform: plat,
-            program,
-            category: 'Google Sheet Ingest',
-            sessionDate: 'Nov 2025 (Live Ingest)',
-            submittedAt: 'Today, Live Sync',
-            status: stat,
-            secretaryLog: `Ingested from Google Sheet CSV on ${new Date().toLocaleTimeString()}`
-          };
-
-          parsedRegistrations.push(newReg);
-        }
-
-        if (parsedRegistrations.length > 0) {
-          // Merge newly synced items with existing
-          const updated = [...parsedRegistrations, ...registrations.filter((r) => !r.id.startsWith('GS-'))];
-          setRegistrations(updated);
-          saveStoredRegistrations(updated);
-
-          // Update sync link lastSyncedAt in Firestore
-          const activeLink = syncLinks.find((l) => l.url === sheetUrl);
-          if (activeLink) {
-            await saveSyncLinkInFirestore({
-              ...activeLink,
-              lastSyncedAt: new Date().toISOString(),
-              recordCount: parsedRegistrations.length
-            });
-          }
-
-          showToast(`Successfully synced ${parsedRegistrations.length} registrations from Google Sheet!`, 'cloud_done');
-          setIsSheetSyncOpen(false);
-        } else {
-          showToast('Could not extract valid registration columns from CSV.', 'warning');
-        }
-      })
-      .catch((err) => {
-        console.warn('Direct CSV fetch note (CORS/Network):', err);
-        showToast(`Simulated sync from Google Sheet: 12 intake records verified and stored!`, 'cloud_done');
+        showToast(
+          `Berjaya menangkap ${result.registrations.length} rekod terus daripada Google link! Rekod sedia untuk semakan.`,
+          'cloud_done'
+        );
         setIsSheetSyncOpen(false);
-      });
+      } else {
+        showToast(
+          result.errorMessage || 'No readable data rows found in this Google link.',
+          'warning'
+        );
+      }
+    } catch (err: any) {
+      showToast('Gagal memproses pautan Google: ' + (err.message || 'Ralat sambungan'), 'error');
+    }
   };
 
   // Actions: Save or Update Data Sync Link in Firebase
@@ -431,6 +389,50 @@ export default function App() {
     } catch (e: any) {
       console.error('Error deleting sync link:', e);
       showToast('Gagal memadam pautan daripada Firebase', 'error');
+    }
+  };
+
+  // Actions: Batch Integrate Up to 20 Google Links into Approvals Queue & Firebase
+  const handleBatchIntegrate = async (
+    newRegistrations: TrainingRegistration[],
+    newLinks: DataSyncLink[],
+    filterToGoogleOnly = true
+  ) => {
+    if (newRegistrations.length === 0 && newLinks.length === 0) return;
+
+    // 1. Update registrations state (prepend new pending intake items)
+    setRegistrations((prev) => {
+      const existingIds = new Set(newRegistrations.map((r) => r.id));
+      const filtered = prev.filter((r) => !existingIds.has(r.id));
+      const combined = [...newRegistrations, ...filtered];
+      saveStoredRegistrations(combined);
+      return combined;
+    });
+
+    // 2. Update syncLinks state
+    setSyncLinks((prev) => {
+      const existingLinkIds = new Set(newLinks.map((l) => l.id));
+      const filteredLinks = prev.filter((l) => !existingLinkIds.has(l.id));
+      return [...newLinks, ...filteredLinks];
+    });
+
+    // 3. Set view to secretary and filter strictly to Google link data
+    if (filterToGoogleOnly) {
+      setSecretarySourceFilter('GOOGLE_LINK_ONLY');
+    }
+    setCurrentView('secretary');
+
+    showToast(
+      `Berjaya menangkap ${newRegistrations.length} rekod sebenar daripada Google link! Rekod sedia untuk semakan kelulusan.`,
+      'cloud_done'
+    );
+
+    // 4. Save batch to Cloud Firestore
+    try {
+      await saveBatchRegistrationsInFirestore(newRegistrations);
+      await saveBatchSyncLinksInFirestore(newLinks);
+    } catch (err) {
+      console.warn('Batch Firestore write deferred:', err);
     }
   };
 
@@ -523,6 +525,7 @@ export default function App() {
                   onSimulateIntake={handleSimulateIntake}
                   onResetData={handleResetData}
                   onOpenSheetSync={() => setIsSheetSyncOpen(true)}
+                  initialSourceFilter={secretarySourceFilter}
                 />
               ) : (
                 <AdminDashboardDesktop
@@ -556,6 +559,7 @@ export default function App() {
               onSimulateIntake={handleSimulateIntake}
               onResetData={handleResetData}
               onOpenSheetSync={() => setIsSheetSyncOpen(true)}
+              initialSourceFilter={secretarySourceFilter}
             />
           ) : (
             <AdminDashboardDesktop
@@ -605,6 +609,7 @@ export default function App() {
         deviceView={deviceView}
         onDeviceViewChange={setDeviceView}
         onOpenSheetSync={() => setIsSheetSyncOpen(true)}
+        onOpenDrive={() => setIsDriveModalOpen(true)}
         onSimulateIntake={handleSimulateIntake}
         onResetData={handleResetData}
         onRefreshSync={() => showToast('Live Cloud Firestore Sync Active • Database ID: ai-studio-centralizedtrain-9e9b1a6b-3ff5-4e58-a574-a649c5f17708', 'cloud_done')}
@@ -657,7 +662,7 @@ export default function App() {
         }}
       />
 
-      {/* Google Sheet Live Sync Modal (Menyimpan Pautan Data ke Firebase) */}
+      {/* Google Sheet Live Sync Modal (Menyimpan Pautan Data ke Firebase & Batch Upload up to 20 links) */}
       <GoogleSheetSyncModal
         isOpen={isSheetSyncOpen}
         onClose={() => setIsSheetSyncOpen(false)}
@@ -665,6 +670,18 @@ export default function App() {
         onExecuteSync={handleExecuteSheetSync}
         onSaveLink={handleSaveSyncLink}
         onDeleteLink={handleDeleteSyncLink}
+        onBatchIntegrate={handleBatchIntegrate}
+        onOpenDrive={() => setIsDriveModalOpen(true)}
+      />
+
+      {/* Google Drive Workspace Modal */}
+      <GoogleDriveModal
+        isOpen={isDriveModalOpen}
+        onClose={() => setIsDriveModalOpen(false)}
+        currentUser={currentUser}
+        registrations={registrations}
+        onBatchIntegrate={handleBatchIntegrate}
+        showToast={showToast}
       />
 
       {/* Toast Notification */}

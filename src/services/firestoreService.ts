@@ -247,6 +247,50 @@ export async function deleteSyncLinkFromFirestore(id: string): Promise<void> {
 }
 
 /**
+ * Save multiple registrations in Firestore using writeBatch
+ */
+export async function saveBatchRegistrationsInFirestore(
+  items: TrainingRegistration[]
+): Promise<void> {
+  if (items.length === 0) return;
+  try {
+    const batch = writeBatch(db);
+    items.forEach((item) => {
+      const docRef = doc(db, REGISTRATIONS_COLLECTION, item.id);
+      batch.set(docRef, {
+        ...item,
+        updatedAt: new Date().toISOString()
+      });
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, REGISTRATIONS_COLLECTION);
+  }
+}
+
+/**
+ * Save multiple sync links in Firestore using writeBatch
+ */
+export async function saveBatchSyncLinksInFirestore(
+  links: DataSyncLink[]
+): Promise<void> {
+  if (links.length === 0) return;
+  try {
+    const batch = writeBatch(db);
+    links.forEach((link) => {
+      const docRef = doc(db, SYNC_LINKS_COLLECTION, link.id);
+      batch.set(docRef, {
+        ...link,
+        updatedAt: new Date().toISOString()
+      });
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, SYNC_LINKS_COLLECTION);
+  }
+}
+
+/**
  * Reset all registrations in Firestore back to standard demo dataset
  */
 export async function resetAllRegistrationsInFirestore(): Promise<void> {

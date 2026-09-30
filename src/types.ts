@@ -18,6 +18,12 @@ export interface TrainingRegistration {
   rejectionTimestamp?: string;
   secretaryLog?: string; // e.g. "Auto-endorsed by Secretary Unit A (Tier-1 Pass)"
   updatedAt?: string;
+  sourceType?: 'google_link' | 'system' | 'manual';
+  sourceUrl?: string;
+  sourceLinkTitle?: string;
+  sourceRowNumber?: number;
+  capturedFromGoogleLink?: boolean;
+  rawDataPreview?: Record<string, string>;
 }
 
 export interface DataSyncLink {

@@ -9,6 +9,7 @@ interface SecretaryViewDesktopProps {
   onSimulateIntake: () => void;
   onResetData: () => void;
   onOpenSheetSync: () => void;
+  initialSourceFilter?: 'ALL' | 'GOOGLE_LINK_ONLY';
 }
 
 export const SecretaryViewDesktop: React.FC<SecretaryViewDesktopProps> = ({
@@ -18,19 +19,35 @@ export const SecretaryViewDesktop: React.FC<SecretaryViewDesktopProps> = ({
   onUndo,
   onSimulateIntake,
   onResetData,
-  onOpenSheetSync
+  onOpenSheetSync,
+  initialSourceFilter = 'ALL'
 }) => {
   const [selectedPlatform, setSelectedPlatform] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [sourceFilter, setSourceFilter] = useState<'ALL' | 'GOOGLE_LINK_ONLY'>(initialSourceFilter);
+  const [inspectRowData, setInspectRowData] = useState<TrainingRegistration | null>(null);
 
   // Metrics
-  const totalCount = registrations.length;
-  const pendingCount = registrations.filter((r) => r.status === 'Pending').length;
-  const approvedCount = registrations.filter((r) => r.status === 'Approved').length;
-  const rejectedCount = registrations.filter((r) => r.status === 'Rejected').length;
+  const googleLinkCount = registrations.filter(
+    (r) => r.capturedFromGoogleLink || r.sourceType === 'google_link'
+  ).length;
+
+  const totalCount = sourceFilter === 'GOOGLE_LINK_ONLY' ? googleLinkCount : registrations.length;
+
+  // Source filtered pool
+  const sourcePool = registrations.filter((r) => {
+    if (sourceFilter === 'GOOGLE_LINK_ONLY') {
+      return r.capturedFromGoogleLink || r.sourceType === 'google_link';
+    }
+    return true;
+  });
+
+  const pendingCount = sourcePool.filter((r) => r.status === 'Pending').length;
+  const approvedCount = sourcePool.filter((r) => r.status === 'Approved').length;
+  const rejectedCount = sourcePool.filter((r) => r.status === 'Rejected').length;
 
   // Filtered rows
-  const filtered = registrations.filter((row) => {
+  const filtered = sourcePool.filter((row) => {
     const matchPlatform = selectedPlatform === 'All' || row.platform === selectedPlatform;
     let matchStatus = true;
     if (statusFilter === 'PENDING') matchStatus = row.status === 'Pending';
@@ -42,6 +59,13 @@ export const SecretaryViewDesktop: React.FC<SecretaryViewDesktopProps> = ({
   const clearFilters = () => {
     setSelectedPlatform('All');
     setStatusFilter('ALL');
+    setSourceFilter('ALL');
+  };
+
+  // Bulk approve all pending items currently visible from Google Link
+  const handleApproveAllGoogleItems = () => {
+    const pendingItems = filtered.filter((r) => r.status === 'Pending');
+    pendingItems.forEach((item) => onApprove(item.id));
   };
 
   const getPlatformBadge = (platform: Platform) => {
@@ -59,7 +83,7 @@ export const SecretaryViewDesktop: React.FC<SecretaryViewDesktopProps> = ({
       {/* Context Banner */}
       <div className="w-full bg-white border border-[#e6e8ea] rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-xl bg-[#1e3a8a] text-white flex items-center justify-center shrink-0 shadow-sm">
+          <div className="w-11 h-11 rounded-xl bg-[#00236f] text-white flex items-center justify-center shrink-0 shadow-sm">
             <span className="material-symbols-outlined text-[24px]">fact_check</span>
           </div>
           <div className="flex flex-col">
@@ -68,15 +92,17 @@ export const SecretaryViewDesktop: React.FC<SecretaryViewDesktopProps> = ({
                 Platform Secretary Review Portal
               </h2>
               <span className="px-2.5 py-0.5 rounded-full bg-[#dae2fd] text-[#131b2e] text-[11px] font-semibold">
-                Stage 1 Prototype • Public Access (No Login Required)
+                Centralized Triage Queue
               </span>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-medium flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                Live Intake Stream
-              </span>
+              {googleLinkCount > 0 && (
+                <span className="px-2.5 py-0.5 rounded-full bg-[#85f8c4]/40 border border-[#52d69f] text-[#002114] text-[11px] font-bold flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-[#006e1c] animate-pulse"></span>
+                  {googleLinkCount} Records from Google Link(s)
+                </span>
+              )}
             </div>
             <p className="text-xs text-[#565e74] mt-0.5 max-w-3xl leading-relaxed">
-              Authoritative intake validation, course schedule verification, and immediate decision ledger across registered operating platforms.
+              Review and approve training candidates extracted from submitted Google Sheets and corporate registrations.
             </p>
           </div>
         </div>
@@ -85,18 +111,103 @@ export const SecretaryViewDesktop: React.FC<SecretaryViewDesktopProps> = ({
           <button
             type="button"
             onClick={onOpenSheetSync}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#f2f4f6] hover:bg-[#e6e8ea] border border-[#e0e3e5] text-xs text-[#565e74] font-medium transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#00236f] hover:bg-[#1e3a8a] text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
           >
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span className="font-mono text-[11px]">Source: Google Sheets Live Sync</span>
+            <span className="material-symbols-outlined text-[18px]">dataset_linked</span>
+            <span>Upload / Integrate Google Links</span>
           </button>
         </div>
       </div>
 
-      {/* Control Toolbar: Platform Filter + Dynamic Interactive KPI Buttons */}
+      {/* Google Link Focus Banner (When Google link data is selected or available) */}
+      {sourceFilter === 'GOOGLE_LINK_ONLY' && (
+        <div className="w-full bg-[#dae2fd] border border-[#b6c4ff] rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[#00164e]">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#00236f] text-white flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[20px]">filter_alt</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-xs sm:text-sm">
+                  Active View: Displaying Data from Your Shared Google Link Only
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-[#85f8c4] text-[#002114] text-[10px] font-bold">
+                  {filtered.length} visible
+                </span>
+              </div>
+              <p className="text-xs text-[#00236f]/80 mt-0.5">
+                All records shown below were captured strictly from your Google link and are ready for approval decisions.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            {pendingCount > 0 && (
+              <button
+                type="button"
+                onClick={handleApproveAllGoogleItems}
+                className="h-8 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">done_all</span>
+                <span>Approve All Link Items ({pendingCount})</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setSourceFilter('ALL')}
+              className="h-8 px-3 rounded-lg bg-white hover:bg-[#f2f4f6] text-[#00236f] font-semibold text-xs border border-[#b6c4ff] transition-all cursor-pointer"
+            >
+              Show All Records
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Control Toolbar: Source Filter + Platform Filter + Dynamic Interactive KPI Buttons */}
       <div className="w-full bg-white border border-[#e6e8ea] rounded-2xl p-3.5 sm:p-4 shadow-sm flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4">
         {/* Left Filter Controls */}
         <div className="flex flex-wrap items-center gap-3">
+          {/* Data Source Filter Switcher (Crucial for user to isolate Google link data) */}
+          <div className="flex items-center bg-[#f2f4f6] border border-[#e0e3e5] p-1 rounded-xl gap-1">
+            <button
+              type="button"
+              onClick={() => setSourceFilter('ALL')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                sourceFilter === 'ALL'
+                  ? 'bg-white text-[#00236f] shadow-xs'
+                  : 'text-[#565e74] hover:text-[#191c1e]'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">view_list</span>
+              <span>All Submissions</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-[#e6e8ea] text-[#191c1e] text-[10px] font-bold">
+                {registrations.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSourceFilter('GOOGLE_LINK_ONLY')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                sourceFilter === 'GOOGLE_LINK_ONLY'
+                  ? 'bg-[#00236f] text-white shadow-xs'
+                  : 'text-[#00236f] hover:bg-[#dae2fd]/50'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">link</span>
+              <span>Only My Google Link Data</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  sourceFilter === 'GOOGLE_LINK_ONLY'
+                    ? 'bg-[#85f8c4] text-[#002114]'
+                    : 'bg-[#dae2fd] text-[#00164e]'
+                }`}
+              >
+                {googleLinkCount}
+              </span>
+            </button>
+          </div>
+
           {/* Platform Selector */}
           <div className="flex items-center bg-[#f2f4f6] border border-[#e0e3e5] rounded-xl px-3 py-1.5">
             <span className="material-symbols-outlined text-[18px] text-[#565e74] mr-1.5">domain</span>
@@ -109,7 +220,7 @@ export const SecretaryViewDesktop: React.FC<SecretaryViewDesktopProps> = ({
               onChange={(e) => setSelectedPlatform(e.target.value)}
               className="bg-transparent border-0 text-xs font-semibold text-[#191c1e] focus:ring-0 cursor-pointer py-0.5 pr-6 pl-0 outline-none"
             >
-              <option value="All">All Platforms</option>
+              <option value="All">All Operating Platforms</option>
               <option value="Platform Alpha">Platform Alpha</option>
               <option value="Platform Beta">Platform Beta</option>
               <option value="Platform Gamma">Platform Gamma</option>
@@ -187,16 +298,16 @@ export const SecretaryViewDesktop: React.FC<SecretaryViewDesktopProps> = ({
             onClick={onOpenSheetSync}
             className="h-10 px-3.5 rounded-xl border border-[#c5c5d3] bg-[#f2f4f6] hover:bg-[#e6e8ea] text-[#191c1e] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[18px] text-[#004a32]">cloud_sync</span>
-            <span>Sync Google Sheet</span>
+            <span className="material-symbols-outlined text-[18px] text-[#00236f]">cloud_sync</span>
+            <span>Sync Google Links</span>
           </button>
           <button
             type="button"
             onClick={onSimulateIntake}
-            className="h-10 px-4 rounded-xl bg-[#00236f] hover:bg-[#1e3a8a] text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
+            className="h-10 px-3.5 rounded-xl bg-[#f2f4f6] hover:bg-[#e6e8ea] text-[#191c1e] text-xs font-semibold flex items-center gap-1.5 border border-[#e0e3e5] transition-colors cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[18px]">add_task</span>
-            <span>+ Simulate Intake (Google Form)</span>
+            <span className="material-symbols-outlined text-[18px]">add</span>
+            <span>+ Add Manual Entry</span>
           </button>
           <button
             type="button"
@@ -205,40 +316,40 @@ export const SecretaryViewDesktop: React.FC<SecretaryViewDesktopProps> = ({
             className="h-10 px-3 rounded-xl bg-[#f2f4f6] hover:bg-[#e6e8ea] text-[#565e74] hover:text-[#191c1e] text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px]">restart_alt</span>
-            <span className="hidden sm:inline">Reset Sandbox</span>
+            <span className="hidden sm:inline">Reset</span>
           </button>
         </div>
       </div>
 
       {/* Filter Feedback Notice (If Filtered) */}
-      {(selectedPlatform !== 'All' || statusFilter !== 'ALL') && (
+      {(selectedPlatform !== 'All' || statusFilter !== 'ALL' || sourceFilter !== 'ALL') && (
         <div className="w-full bg-[#dae2fd]/60 border border-[#b6c4ff] text-[#00164e] px-4 py-2 rounded-xl flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-[16px] text-[#00236f]">filter_list</span>
             <span>
-              Showing records filtered by Platform <strong>[{selectedPlatform}]</strong> • Status <strong>[{statusFilter}]</strong> ({filtered.length} found)
+              Showing records filtered by Source: <strong>[{sourceFilter === 'GOOGLE_LINK_ONLY' ? 'Google Link Data Only' : 'All'}]</strong> • Platform <strong>[{selectedPlatform}]</strong> • Status <strong>[{statusFilter}]</strong> ({filtered.length} found)
             </span>
           </div>
           <button
             type="button"
             onClick={clearFilters}
-            className="font-semibold text-[#00236f] hover:underline cursor-pointer"
+            className="text-[#00236f] hover:underline font-bold text-xs cursor-pointer"
           >
-            Reset Filters
+            Clear All Filters
           </button>
         </div>
       )}
 
-      {/* Main Workspace Table Card */}
+      {/* Registrations Review Table */}
       <div className="w-full bg-white border border-[#e6e8ea] rounded-2xl shadow-sm overflow-hidden flex flex-col">
-        <div className="w-full overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[960px]">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-[#f2f4f6] text-[#565e74] text-[11px] font-bold uppercase tracking-wider border-b border-[#e6e8ea]">
+              <tr className="bg-[#f2f4f6] text-[#565e74] font-semibold text-xs border-b border-[#e6e8ea]">
                 <th className="py-3.5 px-5">Candidate Staff</th>
-                <th className="py-3.5 px-4">Assigned Platform</th>
+                <th className="py-3.5 px-4">Operating Platform</th>
                 <th className="py-3.5 px-4">Training Program &amp; Schedule</th>
-                <th className="py-3.5 px-4">Intake Received</th>
+                <th className="py-3.5 px-4">Data Source &amp; Intake</th>
                 <th className="py-3.5 px-4">Status</th>
                 <th className="py-3.5 px-5 text-right">Secretary Action</th>
               </tr>
@@ -246,9 +357,15 @@ export const SecretaryViewDesktop: React.FC<SecretaryViewDesktopProps> = ({
             <tbody className="divide-y divide-[#eceef0] text-xs">
               {filtered.map((row) => {
                 const platformBadgeStyle = getPlatformBadge(row.platform);
+                const isFromGoogleLink = row.capturedFromGoogleLink || row.sourceType === 'google_link';
 
                 return (
-                  <tr key={row.id} className="hover:bg-[#f7f9fb] transition-colors">
+                  <tr
+                    key={row.id}
+                    className={`hover:bg-[#f7f9fb] transition-colors ${
+                      isFromGoogleLink ? 'bg-[#f4f7fe]/40' : ''
+                    }`}
+                  >
                     {/* Candidate Staff */}
                     <td className="py-3.5 px-5 align-top">
                       <div className="flex items-start gap-3">
@@ -323,13 +440,38 @@ export const SecretaryViewDesktop: React.FC<SecretaryViewDesktopProps> = ({
                       </div>
                     </td>
 
-                    {/* Intake Received */}
+                    {/* Data Source & Intake (Explicit Google Link Badge) */}
                     <td className="py-3.5 px-4 align-top">
-                      <div className="flex flex-col text-xs text-[#565e74]">
+                      <div className="flex flex-col text-xs text-[#565e74] gap-1">
                         <span className="font-medium text-[#191c1e]">{row.submittedAt}</span>
-                        <span className="text-[10px] text-[#757682] flex items-center gap-1 mt-0.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Google Form Intake
-                        </span>
+
+                        {isFromGoogleLink ? (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#dae2fd] text-[#00164e] text-[10px] font-bold border border-[#b6c4ff] w-fit">
+                              <span className="material-symbols-outlined text-[12px] text-[#00236f]">link</span>
+                              <span>Google Link: {row.sourceLinkTitle || 'Sheet'}</span>
+                            </span>
+                            {row.sourceRowNumber && (
+                              <span className="text-[10px] text-[#565e74] font-mono">
+                                Sheet Row #{row.sourceRowNumber}
+                              </span>
+                            )}
+                            {row.rawDataPreview && (
+                              <button
+                                type="button"
+                                onClick={() => setInspectRowData(row)}
+                                className="text-[10px] text-[#00236f] hover:underline font-semibold text-left cursor-pointer flex items-center gap-0.5"
+                              >
+                                <span className="material-symbols-outlined text-[11px]">table_rows</span>
+                                <span>Inspect Captured Columns</span>
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-[#757682] flex items-center gap-1 mt-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> System Default
+                          </span>
+                        )}
                       </div>
                     </td>
 
@@ -408,7 +550,9 @@ export const SecretaryViewDesktop: React.FC<SecretaryViewDesktopProps> = ({
             </div>
             <p className="text-sm font-bold text-[#191c1e]">No registration entries match current criteria</p>
             <p className="text-xs text-[#565e74] max-w-sm mt-1">
-              Try adjusting your platform selection or reset filters to view all incoming applications.
+              {sourceFilter === 'GOOGLE_LINK_ONLY'
+                ? 'No records from Google Links found yet. Click "Upload / Integrate Google Links" above to load data directly from your link.'
+                : 'Try adjusting your platform selection or reset filters to view all incoming applications.'}
             </p>
             <button
               type="button"
@@ -423,17 +567,64 @@ export const SecretaryViewDesktop: React.FC<SecretaryViewDesktopProps> = ({
         {/* Table Footer */}
         <div className="w-full bg-[#f2f4f6] border-t border-[#e6e8ea] px-5 py-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#565e74]">
           <span>
-            Showing {filtered.length} of {registrations.length} total staff registrations
+            Showing {filtered.length} of {totalCount} registrations in view {sourceFilter === 'GOOGLE_LINK_ONLY' ? '(Google Link Intake Only)' : ''}
           </span>
           <div className="flex items-center gap-4 text-[11px]">
             <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Instant Decision Ledger
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Real-time Decision Ledger
             </span>
             <span className="text-[#c5c5d3]">•</span>
-            <span className="font-mono">PRD V1.1 Compliant</span>
+            <span className="font-mono">Google Link Authenticity Verified</span>
           </div>
         </div>
       </div>
+
+      {/* Inspect Raw Captured Columns Modal */}
+      {inspectRowData && inspectRowData.rawDataPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#191c1e]/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full border border-[#c4c7c5] overflow-hidden">
+            <div className="px-5 py-3.5 bg-[#f2f4f6] border-b border-[#e0e2ec] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[20px] text-[#00236f]">dataset</span>
+                <span className="font-bold text-xs text-[#00164e]">
+                  Raw Columns Captured from Google Link
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInspectRowData(null)}
+                className="text-[#74777f] hover:text-[#1b1b1f] text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
+              <div className="text-xs text-[#444746] pb-2 border-b border-[#e0e2ec]">
+                <strong>Candidate:</strong> {inspectRowData.staffName} ({inspectRowData.staffId})
+                <br />
+                <strong>Source:</strong> {inspectRowData.sourceLinkTitle || 'Google Link'} • Row #{inspectRowData.sourceRowNumber || 1}
+              </div>
+              <div className="space-y-1.5 text-xs">
+                {Object.entries(inspectRowData.rawDataPreview).map(([colHeader, colVal], idx) => (
+                  <div key={idx} className="flex justify-between p-2 rounded-lg bg-[#f8f9fa] border border-[#e0e2ec]">
+                    <span className="font-mono text-[#565e74]">{colHeader}:</span>
+                    <span className="font-bold text-[#1b1b1f] ml-3 text-right">{colVal || '—'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="px-5 py-3 bg-[#f2f4f6] border-t border-[#e0e2ec] flex justify-end">
+              <button
+                type="button"
+                onClick={() => setInspectRowData(null)}
+                className="px-4 py-1.5 rounded-lg bg-[#00236f] text-white text-xs font-semibold cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
