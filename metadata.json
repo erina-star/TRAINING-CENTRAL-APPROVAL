@@ -1,0 +1,6 @@
+{
+  "name": "Centralized Training Approvals Platform",
+  "description": "Enterprise multi-platform training approvals and compliance oversight portal with secretary triage, admin analytics, and live Google Sheets sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
