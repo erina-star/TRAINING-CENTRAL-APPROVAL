@@ -1,5 +1,5 @@
-import React from 'react';
-import { ViewMode, DeviceView } from '../types';
+import React, { useState } from 'react';
+import { ViewMode, DeviceView, AuthUser } from '../types';
 
 interface HeaderProps {
   currentView: ViewMode;
@@ -10,6 +10,8 @@ interface HeaderProps {
   onSimulateIntake: () => void;
   onResetData: () => void;
   onRefreshSync?: () => void;
+  currentUser?: AuthUser | null;
+  onSignOut?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,8 +22,11 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSheetSync,
   onSimulateIntake,
   onResetData,
-  onRefreshSync
+  onRefreshSync,
+  currentUser,
+  onSignOut
 }) => {
+  const [showUserMenu, setShowUserMenu] = useState(false);
   return (
     <header className="fixed top-0 w-full z-40 bg-white/95 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-[#e6e8ea]">
       <div className="h-16 w-full px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-2 sm:gap-4">
@@ -162,12 +167,89 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="material-symbols-outlined text-[18px]">sync</span>
           </button>
 
-          {/* User Icon */}
-          <div
-            className="w-8 h-8 rounded-full bg-[#00236f] text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-sm"
-            title="Public Secretary Access Mode"
-          >
-            <span className="material-symbols-outlined text-[18px]">person</span>
+          {/* User Profile & Sign Out Menu */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="flex items-center gap-2 p-1 sm:px-2 sm:py-1 rounded-full hover:bg-[#f2f4f6] transition-colors border border-transparent hover:border-[#c4c7c5] cursor-pointer"
+              title={currentUser?.displayName || 'User Profile'}
+            >
+              {currentUser?.photoURL ? (
+                <img
+                  src={currentUser.photoURL}
+                  alt={currentUser.displayName || 'Google Profile'}
+                  className="w-8 h-8 rounded-full object-cover border border-[#00236f] shadow-xs"
+                />
+              ) : (
+                <div
+                  className="w-8 h-8 rounded-full bg-[#00236f] text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs"
+                >
+                  {currentUser?.displayName
+                    ? currentUser.displayName.slice(0, 2).toUpperCase()
+                    : <span className="material-symbols-outlined text-[18px]">person</span>}
+                </div>
+              )}
+              
+              <div className="hidden md:flex flex-col text-left">
+                <span className="text-xs font-bold text-[#00164e] leading-tight max-w-[120px] truncate">
+                  {currentUser?.displayName || 'Authorized User'}
+                </span>
+                <span className="text-[10px] text-[#565e74] leading-tight truncate max-w-[120px]">
+                  {currentUser?.role?.split('&')[0] || 'Secretariat'}
+                </span>
+              </div>
+
+              <span className="material-symbols-outlined text-[16px] text-[#565e74] hidden sm:inline">
+                {showUserMenu ? 'expand_less' : 'expand_more'}
+              </span>
+            </button>
+
+            {/* Dropdown Menu */}
+            {showUserMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowUserMenu(false)}
+                />
+                <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white border border-[#c4c7c5] shadow-xl py-2 z-50 text-left animate-fadeIn">
+                  <div className="px-4 py-3 border-b border-[#e0e2ec]">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#dae2fd] text-[#00164e]">
+                        Google Workspace
+                      </span>
+                      <span className="text-[10px] text-[#006e1c] font-semibold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#006e1c]"></span>
+                        Authenticated
+                      </span>
+                    </div>
+                    <p className="text-xs font-bold text-[#1b1b1f] truncate">
+                      {currentUser?.displayName || 'User'}
+                    </p>
+                    <p className="text-[11px] text-[#565e74] truncate">
+                      {currentUser?.email || 'Authenticated Account'}
+                    </p>
+                    <p className="text-[10px] text-[#00236f] font-semibold mt-1 bg-[#f0f4fc] px-2 py-0.5 rounded-md inline-block">
+                      {currentUser?.role || 'Staff'}
+                    </p>
+                  </div>
+
+                  <div className="py-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        if (onSignOut) onSignOut();
+                      }}
+                      className="w-full px-4 py-2 text-xs font-semibold text-[#ba1a1a] hover:bg-[#ffdad6] flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-sm">logout</span>
+                      <span>Sign Out from Platform</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

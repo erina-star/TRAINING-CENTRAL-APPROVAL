@@ -13,6 +13,7 @@ An enterprise-grade, multi-platform training approvals and compliance oversight 
 
 ## 🌟 What's New in Version 2.1 (Latest)
 
+- **🔐 Google Workspace Authentication & Single Sign-On (SSO)**: Secure login gateway requiring Google authentication before accessing the portal, with authorized profile detection, dynamic user role badges, and seamless Sign Out controls.
 - **🔥 Cloud Firestore Real-time Persistence**: All staff training registrations, approval decisions, audit timelines, and rejection notes are saved directly in Google Cloud Firestore (`training_registrations`).
 - **🔗 Persistent Google Sheet CSV Data Links (`sync_links`)**: All Google Sheet CSV endpoints (both default streams and custom user-added URLs) are stored in Firestore with real-time synchronization across all devices and sessions.
 - **⚡ Dual-Sync & Offline Resilience**: Instant real-time UI updates powered by Firestore `onSnapshot` listeners, paired with local storage caching for immediate zero-latency startup and offline resilience.

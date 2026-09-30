@@ -29,9 +29,18 @@ export interface DataSyncLink {
   syncInterval?: string;
   isActive: boolean;
   lastSyncedAt?: string;
+  recordCount?: number;
   createdAt: string;
   updatedAt?: string;
 }
 
 export type ViewMode = 'secretary' | 'admin';
 export type DeviceView = 'responsive' | 'mobile-mockup' | 'desktop-mockup';
+
+export interface AuthUser {
+  uid: string;
+  displayName: string | null;
+  email: string | null;
+  photoURL: string | null;
+  role: string;
+}
