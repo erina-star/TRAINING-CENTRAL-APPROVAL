@@ -17,6 +17,20 @@ export interface TrainingRegistration {
   remarks?: string; // Rejection remarks or secretary endorsement notes
   rejectionTimestamp?: string;
   secretaryLog?: string; // e.g. "Auto-endorsed by Secretary Unit A (Tier-1 Pass)"
+  updatedAt?: string;
+}
+
+export interface DataSyncLink {
+  id: string;
+  title: string;
+  url: string;
+  type: 'google_sheet_csv' | 'google_form_webhook' | 'api_endpoint';
+  targetPlatform?: string;
+  syncInterval?: string;
+  isActive: boolean;
+  lastSyncedAt?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export type ViewMode = 'secretary' | 'admin';

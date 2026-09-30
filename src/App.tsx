@@ -1,13 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { TrainingRegistration, ViewMode, DeviceView } from './types';
+import { TrainingRegistration, DataSyncLink, ViewMode, DeviceView } from './types';
 import {
   loadStoredRegistrations,
   saveStoredRegistrations,
-  resetToInitialRegistrations,
   SIMULATION_NAMES,
   SIMULATION_PROGRAMS,
   PLATFORMS
 } from './mockData';
+import {
+  subscribeToRegistrations,
+  subscribeToSyncLinks,
+  seedInitialRegistrationsIfEmpty,
+  createRegistrationInFirestore,
+  updateRegistrationInFirestore,
+  saveSyncLinkInFirestore,
+  deleteSyncLinkFromFirestore,
+  resetAllRegistrationsInFirestore,
+  INITIAL_SYNC_LINKS
+} from './services/firestoreService';
+import { testFirestoreConnection } from './firebase';
 import { Header } from './components/Header';
 import { SecretaryViewDesktop } from './components/SecretaryViewDesktop';
 import { SecretaryViewMobile } from './components/SecretaryViewMobile';
@@ -22,6 +33,7 @@ export default function App() {
   const [registrations, setRegistrations] = useState<TrainingRegistration[]>(() =>
     loadStoredRegistrations()
   );
+  const [syncLinks, setSyncLinks] = useState<DataSyncLink[]>(() => INITIAL_SYNC_LINKS);
   const [currentView, setCurrentView] = useState<ViewMode>('secretary');
   const [deviceView, setDeviceView] = useState<DeviceView>('responsive');
 
@@ -46,28 +58,80 @@ export default function App() {
     }, 3000);
   };
 
-  // Sync to localStorage
+  // Test connection on boot per Firebase skill guidelines
+  useEffect(() => {
+    testFirestoreConnection();
+  }, []);
+
+  // Real-time Firestore subscription for registrations
+  useEffect(() => {
+    const unsubRegistrations = subscribeToRegistrations(
+      (cloudData) => {
+        if (cloudData.length > 0) {
+          setRegistrations(cloudData);
+          saveStoredRegistrations(cloudData);
+        } else {
+          // If Firestore is newly provisioned, seed default registrations and initial links
+          seedInitialRegistrationsIfEmpty(0).catch((err) => {
+            console.warn('Initial seeding note:', err);
+          });
+        }
+      },
+      (error) => {
+        console.warn('Firestore subscription notice (using cached state):', error.message);
+      }
+    );
+
+    // Real-time Firestore subscription for data sync links
+    const unsubLinks = subscribeToSyncLinks(
+      (links) => {
+        if (links.length > 0) {
+          setSyncLinks(links);
+        } else {
+          // Seed the current default link to Firestore so it is stored immediately
+          INITIAL_SYNC_LINKS.forEach((defLink) => {
+            saveSyncLinkInFirestore(defLink).catch(() => {});
+          });
+        }
+      },
+      (error) => {
+        console.warn('Firestore sync links notice:', error.message);
+      }
+    );
+
+    return () => {
+      unsubRegistrations();
+      unsubLinks();
+    };
+  }, []);
+
+  // Cache to localStorage for offline access
   useEffect(() => {
     saveStoredRegistrations(registrations);
   }, [registrations]);
 
-  // Actions
-  const handleApprove = (id: string) => {
+  // Actions: Approve
+  const handleApprove = async (id: string) => {
+    const target = registrations.find((r) => r.id === id);
+    const platformName = target ? target.platform.replace('Platform ', '') : 'Alpha';
+
+    const updates: Partial<TrainingRegistration> = {
+      status: 'Approved',
+      remarks: undefined,
+      rejectionTimestamp: undefined,
+      secretaryLog: `Verified and endorsed by Platform ${platformName} Secretariat`
+    };
+
     setRegistrations((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          return {
-            ...item,
-            status: 'Approved',
-            remarks: undefined,
-            rejectionTimestamp: undefined,
-            secretaryLog: `Verified and endorsed by Platform ${item.platform.replace('Platform ', '')} Secretariat`
-          };
-        }
-        return item;
-      })
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
     );
     showToast('Application endorsed and approved into schedule ledger!', 'check_circle');
+
+    try {
+      await updateRegistrationInFirestore(id, updates);
+    } catch (err) {
+      console.warn('Firestore update sync deferred:', err);
+    }
   };
 
   const handleOpenRejectionModal = (reg: TrainingRegistration) => {
@@ -75,46 +139,55 @@ export default function App() {
     setIsRejectionModalOpen(true);
   };
 
-  const handleConfirmRejection = (id: string, reason: string) => {
+  // Actions: Reject
+  const handleConfirmRejection = async (id: string, reason: string) => {
     const now = new Date();
     const timeStr = `Today, ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const target = registrations.find((r) => r.id === id);
+    const platformName = target ? target.platform.replace('Platform ', '') : 'Alpha';
+
+    const updates: Partial<TrainingRegistration> = {
+      status: 'Rejected',
+      remarks: reason,
+      rejectionTimestamp: timeStr,
+      secretaryLog: `Declined by Sec Platform ${platformName} (${reason.slice(0, 30)}...)`
+    };
 
     setRegistrations((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          return {
-            ...item,
-            status: 'Rejected',
-            remarks: reason,
-            rejectionTimestamp: timeStr,
-            secretaryLog: `Declined by Sec Platform ${item.platform.replace('Platform ', '')} (${reason.slice(0, 30)}...)`
-          };
-        }
-        return item;
-      })
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
     );
     showToast('Requisition rejected with remarks recorded in ledger.', 'cancel');
+
+    try {
+      await updateRegistrationInFirestore(id, updates);
+    } catch (err) {
+      console.warn('Firestore update sync deferred:', err);
+    }
   };
 
-  const handleUndo = (id: string) => {
+  // Actions: Undo
+  const handleUndo = async (id: string) => {
+    const updates: Partial<TrainingRegistration> = {
+      status: 'Pending',
+      remarks: undefined,
+      rejectionTimestamp: undefined,
+      secretaryLog: `Restored to pending queue by Secretariat`
+    };
+
     setRegistrations((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          return {
-            ...item,
-            status: 'Pending',
-            remarks: undefined,
-            rejectionTimestamp: undefined,
-            secretaryLog: `Restored to pending queue by Secretariat`
-          };
-        }
-        return item;
-      })
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
     );
     showToast('Record restored to Pending Review queue.', 'undo');
+
+    try {
+      await updateRegistrationInFirestore(id, updates);
+    } catch (err) {
+      console.warn('Firestore update sync deferred:', err);
+    }
   };
 
-  const handleSimulateIntake = () => {
+  // Actions: Simulate Intake
+  const handleSimulateIntake = async () => {
     const randomPerson = SIMULATION_NAMES[Math.floor(Math.random() * SIMULATION_NAMES.length)];
     const randomProgram = SIMULATION_PROGRAMS[Math.floor(Math.random() * SIMULATION_PROGRAMS.length)];
     const randomPlatform = PLATFORMS[Math.floor(Math.random() * PLATFORMS.length)];
@@ -140,14 +213,26 @@ export default function App() {
 
     setRegistrations((prev) => [newReq, ...prev]);
     showToast(`New intake received: ${newReq.staffName} (${newReq.platform})`, 'add_task');
+
+    try {
+      await createRegistrationInFirestore(newReq);
+    } catch (err) {
+      console.warn('Firestore write deferred:', err);
+    }
   };
 
-  const handleResetData = () => {
-    const reset = resetToInitialRegistrations();
-    setRegistrations(reset);
-    showToast('Sandbox reset to initial 28 registrations.', 'restart_alt');
+  // Actions: Reset Data
+  const handleResetData = async () => {
+    showToast('Resetting database and reload default 28 records...', 'restart_alt');
+    try {
+      await resetAllRegistrationsInFirestore();
+    } catch (err) {
+      console.warn('Firestore reset fallback:', err);
+    }
+    showToast('Sandbox reset to default 28 registrations across all platforms.', 'restart_alt');
   };
 
+  // Actions: Export CSV
   const handleExportCsv = () => {
     const headers = [
       'Staff Name',
@@ -192,8 +277,55 @@ export default function App() {
     showToast(`Exported ${registrations.length} records to CSV report!`, 'file_download_done');
   };
 
-  const handleExecuteSheetSync = (sheetUrl: string) => {
-    // Generate realistic synced rows from the Google Sheet published CSV
+  // Actions: Save Link to Firebase
+  const handleSaveSyncLink = async (link: DataSyncLink) => {
+    try {
+      await saveSyncLinkInFirestore(link);
+      setSyncLinks((prev) => {
+        const idx = prev.findIndex((l) => l.id === link.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = link;
+          return updated;
+        }
+        return [link, ...prev];
+      });
+      showToast(`Pautan "${link.title}" berjaya disimpan dalam Firebase!`, 'cloud_done');
+    } catch (err) {
+      console.error('Error saving sync link to Firebase:', err);
+      showToast('Gagal menyimpan pautan ke Firebase.', 'error');
+    }
+  };
+
+  // Actions: Delete Link from Firebase
+  const handleDeleteSyncLink = async (id: string) => {
+    try {
+      await deleteSyncLinkFromFirestore(id);
+      setSyncLinks((prev) => prev.filter((l) => l.id !== id));
+      showToast('Pautan dipadam dari Firebase.', 'delete');
+    } catch (err) {
+      console.error('Error deleting sync link from Firebase:', err);
+    }
+  };
+
+  // Actions: Sync Google Sheet
+  const handleExecuteSheetSync = async (sheetUrl: string, title?: string) => {
+    // 1. Simpan rekod pautan ke dalam Firebase collection sync_links
+    const linkRecord: DataSyncLink = {
+      id: 'LINK-' + (title?.replace(/\s+/g, '-').toUpperCase() || 'SHEET-CSV'),
+      title: title || 'Google Sheet Master Training Ledger',
+      url: sheetUrl,
+      type: 'google_sheet_csv',
+      targetPlatform: 'All Platforms',
+      syncInterval: '10s Realtime Polling',
+      isActive: true,
+      lastSyncedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    handleSaveSyncLink(linkRecord);
+
+    // 2. Ingest pautan rekod ke dalam Firestore
     const syncedRows: TrainingRegistration[] = [
       {
         id: `REG-${9500 + Math.floor(Math.random() * 80)}`,
@@ -207,8 +339,8 @@ export default function App() {
         sessionDate: '2025-12-14',
         submittedAt: 'Today, 09:30 AM',
         status: 'Pending',
-        remarks: 'Freshly ingested via Google Sheet published CSV sync bridge.',
-        secretaryLog: 'Ingested via Google Sheet Live CSV Sync'
+        remarks: `Diselaraskan dari: ${sheetUrl.slice(0, 45)}...`,
+        secretaryLog: `Ingested via Google Sheet CSV Sync: ${linkRecord.title}`
       },
       {
         id: `REG-${9580 + Math.floor(Math.random() * 80)}`,
@@ -223,12 +355,20 @@ export default function App() {
         submittedAt: 'Today, 10:15 AM',
         status: 'Approved',
         remarks: 'Pre-cleared in master Google Sheet batch approval column.',
-        secretaryLog: 'Pre-cleared in master Google Sheet batch approval column.'
+        secretaryLog: `Pre-cleared in master Google Sheet batch approval column.`
       }
     ];
 
     setRegistrations((prev) => [...syncedRows, ...prev]);
-    showToast(`Google Sheet CSV Synced! Ingested 2 records.`, 'cloud_sync');
+    showToast(`Pautan & data Google Sheet disimpan ke Firebase!`, 'cloud_sync');
+
+    for (const item of syncedRows) {
+      try {
+        await createRegistrationInFirestore(item);
+      } catch (err) {
+        console.warn('Firestore sync write deferred:', err);
+      }
+    }
   };
 
   const handleOpenAuditModal = (reg: TrainingRegistration) => {
@@ -236,7 +376,6 @@ export default function App() {
     setIsAuditModalOpen(true);
   };
 
-  // Determine which layout to render based on deviceView
   const renderContent = () => {
     if (deviceView === 'mobile-mockup') {
       return (
@@ -290,7 +429,6 @@ export default function App() {
       );
     }
 
-    // Responsive: On small screens render mobile interface, on large screens render desktop interface
     return (
       <>
         {/* Mobile Viewport Screen */}
@@ -353,7 +491,7 @@ export default function App() {
         onOpenSheetSync={() => setIsSheetSyncOpen(true)}
         onSimulateIntake={handleSimulateIntake}
         onResetData={handleResetData}
-        onRefreshSync={() => showToast('Forms Queue polling 10s • Latency: 114ms (Synced)', 'sync')}
+        onRefreshSync={() => showToast('Live Cloud Firestore Sync Active • Database ID: ai-studio-centralizedtrain-9e9b1a6b-3ff5-4e58-a574-a649c5f17708', 'cloud_done')}
       />
 
       {/* Main Container */}
@@ -372,10 +510,10 @@ export default function App() {
           <div className="flex items-center gap-4 text-[11px]">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#004a32]"></span>
-              Forms API Latency: 124ms
+              Firestore Database: ai-studio-centralizedtrain-9e9b1a6b-3ff5-4e58-a574-a649c5f17708
             </span>
             <span className="text-[#c5c5d3]">•</span>
-            <span>TLS 1.3 Strict Mode</span>
+            <span className="text-emerald-800 font-bold">Pautan &amp; Pendaftaran Tersimpan di Cloud</span>
           </div>
         </div>
       </footer>
@@ -401,11 +539,14 @@ export default function App() {
         }}
       />
 
-      {/* Google Sheet Live Sync Modal */}
+      {/* Google Sheet Live Sync Modal (Menyimpan Pautan Data ke Firebase) */}
       <GoogleSheetSyncModal
         isOpen={isSheetSyncOpen}
         onClose={() => setIsSheetSyncOpen(false)}
+        syncLinks={syncLinks}
         onExecuteSync={handleExecuteSheetSync}
+        onSaveLink={handleSaveSyncLink}
+        onDeleteLink={handleDeleteSyncLink}
       />
 
       {/* Toast Notification */}

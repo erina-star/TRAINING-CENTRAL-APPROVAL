@@ -1,0 +1,133 @@
+{
+  "entities": {
+    "TrainingRegistration": {
+      "title": "TrainingRegistration",
+      "description": "Enterprise staff training registration submitted through Google Forms or web intake",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique registration code, e.g., REG-9401"
+        },
+        "staffName": {
+          "type": "string",
+          "description": "Full name of the candidate staff member"
+        },
+        "staffId": {
+          "type": "string",
+          "description": "Employee ID code, e.g., EMP-4102 or STF-1042"
+        },
+        "initials": {
+          "type": "string",
+          "description": "1 to 3 uppercase initials of the staff member"
+        },
+        "avatarBg": {
+          "type": "string",
+          "description": "Avatar background color styling class"
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["Platform Alpha", "Platform Beta", "Platform Gamma"],
+          "description": "Operational platform hub where candidate is based"
+        },
+        "program": {
+          "type": "string",
+          "description": "Title of the training course requisition"
+        },
+        "category": {
+          "type": "string",
+          "description": "Curriculum competency track"
+        },
+        "sessionDate": {
+          "type": "string",
+          "description": "Date or schedule interval for the course"
+        },
+        "submittedAt": {
+          "type": "string",
+          "description": "Submission timestamp record"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Pending", "Approved", "Rejected"],
+          "description": "Workflow approval state"
+        },
+        "remarks": {
+          "type": "string",
+          "description": "Administrative notes or mandatory rejection reasons"
+        },
+        "rejectionTimestamp": {
+          "type": "string",
+          "description": "Timestamp when rejection was finalized"
+        },
+        "secretaryLog": {
+          "type": "string",
+          "description": "Immutable secretary audit trail explanation"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last document update"
+        }
+      },
+      "required": ["id", "staffName", "staffId", "platform", "program", "status"]
+    },
+    "DataSyncLink": {
+      "title": "DataSyncLink",
+      "description": "Configured external data source link such as Google Sheets published CSV URL or Google Form webhook",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique link record ID"
+        },
+        "title": {
+          "type": "string",
+          "description": "Human readable name of the data source"
+        },
+        "url": {
+          "type": "string",
+          "description": "Published Google Sheet CSV link or Webhook URL"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["google_sheet_csv", "google_form_webhook", "api_endpoint"],
+          "description": "Type of external data stream"
+        },
+        "targetPlatform": {
+          "type": "string",
+          "description": "Target platform or 'All Platforms'"
+        },
+        "syncInterval": {
+          "type": "string",
+          "description": "Polling frequency e.g. 10s polling"
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Whether sync is enabled"
+        },
+        "lastSyncedAt": {
+          "type": "string",
+          "description": "Timestamp of the last sync run"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["id", "title", "url", "type"]
+    }
+  },
+  "firestore": {
+    "/training_registrations/{registrationId}": {
+      "schema": "TrainingRegistration",
+      "description": "Real-time master collection of all training requisition submissions and secretary triage decisions"
+    },
+    "/sync_links/{linkId}": {
+      "schema": "DataSyncLink",
+      "description": "Collection of all configured Google Sheet and Google Form data sync links"
+    }
+  }
+}

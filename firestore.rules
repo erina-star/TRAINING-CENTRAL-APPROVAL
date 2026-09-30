@@ -1,0 +1,64 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isValidRegistration(data) {
+      return data.id is string && data.id.size() <= 64 &&
+        data.staffName is string && data.staffName.size() <= 128 &&
+        data.staffId is string && data.staffId.size() <= 64 &&
+        data.platform in ['Platform Alpha', 'Platform Beta', 'Platform Gamma'] &&
+        data.program is string && data.program.size() <= 256 &&
+        data.status in ['Pending', 'Approved', 'Rejected'];
+    }
+
+    function isValidSyncLink(data) {
+      return data.id is string && data.id.size() <= 64 &&
+        data.title is string && data.title.size() <= 128 &&
+        data.url is string && data.url.size() <= 1024 &&
+        data.type in ['google_sheet_csv', 'google_form_webhook', 'api_endpoint'];
+    }
+
+    // Master Collection: Training registrations
+    match /training_registrations/{registrationId} {
+      allow read: if true;
+
+      allow create: if isValidId(registrationId) &&
+        isValidRegistration(incoming()) &&
+        incoming().id == registrationId;
+
+      allow update: if isValidId(registrationId) &&
+        isValidRegistration(incoming()) &&
+        incoming().id == resource.data.id;
+
+      allow delete: if isValidId(registrationId);
+    }
+
+    // Secondary Collection: Configured data sync links (Google Sheets / Google Forms)
+    match /sync_links/{linkId} {
+      allow read: if true;
+
+      allow create: if isValidId(linkId) &&
+        isValidSyncLink(incoming()) &&
+        incoming().id == linkId;
+
+      allow update: if isValidId(linkId) &&
+        isValidSyncLink(incoming()) &&
+        incoming().id == resource.data.id;
+
+      allow delete: if isValidId(linkId);
+    }
+  }
+}

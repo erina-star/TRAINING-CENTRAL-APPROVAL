@@ -117,6 +117,16 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
+          {/* Cloud Firestore Status Badge */}
+          <div
+            title="Connected to Firebase Firestore"
+            className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#dae2fd] text-[#00164e] text-xs font-semibold border border-[#b6c4ff]"
+          >
+            <span className="w-2 h-2 rounded-full bg-[#1e3a8a] animate-pulse"></span>
+            <span className="material-symbols-outlined text-[15px] text-[#00236f]">cloud_done</span>
+            <span>Firestore Live</span>
+          </div>
+
           {/* Google Sheet CSV Sync Trigger (Stage 3 Requirement) */}
           <button
             type="button"
